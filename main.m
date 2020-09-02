@@ -53,16 +53,37 @@ D = [-1,  0; ...
       0,  1]; % connectivity matrix
 clear n m
 
+% -------------------------------------------------------------------------
+% User Inputs: Video Parameters
+% -------------------------------------------------------------------------
+global create_video myVideo
+create_video = 0;
 
 % -------------------------------------------------------------------------
 % User Inputs: Simulation Parameters
 % -------------------------------------------------------------------------
 global Tb x0 T dt
-x0 = [ -1/4; 0; 1/2; 1/4; 1/2];   % Initial condition
+x0 = [1/2; 3/7 ; 5/4; 1/4; 1/2];  % Initial condition
 Tb = 1;                           % Backup time
 T  = 4;                           % Simulation Time
 dt = .01;                         % Timestep for Simulation
+T_sim = 0:dt:T;                   % Vector of Simulation Times
 
+
+% -------------------------------------------------------------------------
+% Get Random Continuous Disturbance Signal from Gaussian Process
+% -------------------------------------------------------------------------
+% Generate random set of velocity inputs to the unicylcye
+n=length(T_sim);
+param=1;
+K_ss=kernel(T_sim,T_sim, param);
+CHOL =chol(K_ss+1e-12*eye(n),'lower');
+% Generate 3 random deisturbance signals from GP
+for i = 1:3
+    gp_signal = (CHOL*normrnd(0, 1, length(T_sim),1))';
+    const = (W(i, 2)- W(i, 1))/(max(gp_signal) - min(gp_signal));
+    w_signal(i, :) = const*(gp_signal - min(gp_signal))  + W(i, 1);
+end
 
 % -------------------------------------------------------------------------
 % Get Safe Set and Verify that Sb+(Tb) does not Intersect Unsafe Set 
@@ -90,8 +111,21 @@ fprintf('Tb = 1 verified to be safe backup time\n');
 % -------------------------------------------------------------------------
 
 % this plot shows the vehicle trajectories
-figure(1); clf; hold on; grid on
-xlabel('$x_4$','Interpreter','latex')
+figure(1); clf; 
+
+ploot(1)
+hold on; 
+axis([-.25, 2.25, -.1, .25])
+set(gca,'XTick',0:.5:2, 'YTick', [])
+plot([-.5, 2.5], [-.025, -.025], 'k', 'LineWidth', 2)
+set(gca,'FontSize',16, 'TickLabelInterpreter','latex')
+Leg = legend();
+set(Leg,'visible','off');
+xlabel({'Distance', '', ''},'Interpreter','latex')
+
+ploot(2)
+hold on; grid on
+xlabel({'$x_4$', ''},'Interpreter','latex')
 ylabel('$x_5$','Interpreter','latex')
 set(gca,'FontSize',16, 'TickLabelInterpreter','latex')
 Leg = legend();
@@ -101,9 +135,8 @@ xticks(0:.5:2)
 yticks(-.25:.25:.75)
 
 % this plot shows the applied input vs time
-figure(2); clf; hold on; grid on
 % Input 1
-subplot(2, 1 , 1); hold on; grid on
+ploot(3); hold on; grid on
 xlabel('$t$','Interpreter','latex')
 ylabel('$u_{\rm d},\, u^{\rm ASIF}$','Interpreter','latex')
 set(gca,'FontSize',16, 'TickLabelInterpreter','latex')
@@ -113,7 +146,7 @@ axis([0, T, -.35, .35])
 yticks(-.3:.3:.3)
 
 % Input 2
-subplot(2, 1 , 2); hold on; grid on
+ploot(4); hold on; grid on
 xlabel('$t$','Interpreter','latex')
 ylabel('$u_{\rm d},\, u^{\rm ASIF}$','Interpreter','latex')
 set(gca,'FontSize',16, 'TickLabelInterpreter','latex')
@@ -138,22 +171,29 @@ np = 150;
 
 
 % the stopwatch function calculates the time for each optimazation
-global stopwatch_on comp_times cpu_time
-stopwatch_on = 0;   % mode for stopatch state machine
+global comp_times
 comp_times = [];    % this variable stores the time of each optimazation
-cpu_time = [];      % this variable stores the time the stopwatch was activated
+
+
+% set up cart picture
+CART_SCALE = .1;% For plotting graphic
+CART = MakeCart(CART_SCALE);
 
 plot_holder  = []; % stores plot variables
 plot_holder2 = []; % stores plot variables
 plot_holder3 = []; % stores plot variables
 
 fprintf('Begin Simulation: \n');
-sz = T/dt;         % number of time steps for simulation
+sz = T/dt;          % number of time steps for simulation
+video_maker(1);     % set up video
+
+cart1_pos = 0;
 for t = 1:sz
     fprintf(['Timestep: ', int2str(t),'/ ', int2str(sz), ' \n']); % print iteration
-    stopwatch()
+    mean(comp_times)
+    %stopwatch()
     
-    w = rand(3, 1).*(W(:, 2) - W(:, 1)) + W(:, 1);  % choose disturbances
+    w = w_signal(:, t);  % choose disturbances
     
     u_des = [-.3*sin((1/2)*t*(2*pi/sz)); ...
              .2*cos(t*(2*pi/sz))]; % desired input
@@ -165,17 +205,30 @@ for t = 1:sz
     STATE_TRAJ_nom(:, t+1) = Simulate_Dynamics(STATE_TRAJ_nom(:, t), u_des, w);
     
     U_Sim(:, t) = [u_des; u_app];
-    T_sim(1, t) = dt*(t - 1);
     
     %%%%%%%%%%
     % Plot
     %%%%%%%%%%%
-    figure(1)
     if t~=1
         delete(plot_holder)
     end
     plot_holder = [];
     
+    ploot(1)
+    cart1_pos = cart1_pos + dt*STATE_TRAJ(1, t);
+    cart2_pos = cart1_pos + STATE_TRAJ(4, t);
+    cart3_pos = cart2_pos + STATE_TRAJ(5, t);
+    
+    cart1 = plot(cart1_pos+CART(1, :), CART(2, :), 'r', ...
+        'LineWidth', 2);
+    cart2 = plot(cart2_pos+CART(1, :), CART(2, :), 'b', ...
+        'Linewidth', 2);
+    cart3 = plot(cart3_pos+CART(1, :), CART(2, :), 'Color', [0, .8, .1], ...
+        'Linewidth', 2);
+    
+    plot_holder = [cart1, cart2, cart3];
+    
+    ploot(2)
     % For the current velocities, project the Safe Set to the x4-x5 plane 
     corners   = get_corners(xmax(1:5),xmax(6:10));
     hs_corners=cellfun(@hsam,num2cell(corners,1));
@@ -194,7 +247,7 @@ for t = 1:sz
     [cc, hh] = contour(XX1, XX2, ZZ, ...
                     [0 0], 'r', ...
                     'HandleVisibility', 'off'); % Overlay contour line
-    plot_holder(1) = patch(cc(1,2:end), cc(2, 2:end), [0, 1, 0], ...
+    plot_holder(end+1) = patch(cc(1,2:end), cc(2, 2:end), [0, 1, 0], ...
                     'EdgeColor', [0, 0, 0], ...
                     'FaceAlpha', .1, ...
                     'HandleVisibility', 'off');
@@ -231,27 +284,29 @@ for t = 1:sz
     drawnow;
     %%%%%%%
     
-    figure(2)
-    subplot(2, 1 , 1)
+    ploot(3)
     if t~=1
         delete(plot_holder2);
         plot_holder2 = [];
     end
-    plot_holder2(1) = plot(T_sim(1, :), U_Sim(1, :), 'r', 'LineWidth', 2);
-    plot_holder2(2) = plot(T_sim(1, :), U_Sim(3, :), 'b', 'LineWidth', 2);
+    plot_holder2(1) = plot(T_sim(1, 1:t), U_Sim(1, :), 'r', 'LineWidth', 2);
+    plot_holder2(2) = plot(T_sim(1, 1:t), U_Sim(3, :), 'b', 'LineWidth', 2);
     drawnow;
     
-    subplot(2, 1 , 2)
+    ploot(4)
     if t~=1
         delete(plot_holder3);
         plot_holder3 = [];
     end
-    plot_holder3(1) = plot(T_sim(1, :), U_Sim(2, :), 'r', 'LineWidth', 2);
-    plot_holder3(2) = plot(T_sim(1, :), U_Sim(4, :), 'b', 'LineWidth', 2);
+    plot_holder3(1) = plot(T_sim(1, 1:t), U_Sim(2, :), 'r', 'LineWidth', 2);
+    plot_holder3(2) = plot(T_sim(1, 1:t), U_Sim(4, :), 'b', 'LineWidth', 2);
     drawnow;
+    
+    video_maker(2); % Record Frame
 end
+video_maker(3); % Close Video
 
-fprintf('Simulation ompleted.  Average solver time was: \n');
+fprintf('Simulation completed.  Average solver time was: \n');
 mean(comp_times)
 
 %------------------------------------------------------------
@@ -262,7 +317,8 @@ mean(comp_times)
 %  control
 % -------------
 function [u_app, xmax, Phi] = QP(x, u_des)
-    global W beta Tb N K D
+    global W beta Tb N K D 
+    global comp_times % for storing cpu times for optimazation
     
     % gets every possible combination of worst case disturbances
     w = get_corners(W(:, 1), W(:, 2));
@@ -300,7 +356,6 @@ function [u_app, xmax, Phi] = QP(x, u_des)
     B = [D; zeros(K)];
     C = [eye(N); zeros(K, N)];
 
-    stopwatch()
     cvx_begin quiet
         %Optimize over u
         variable u(K, 1)
@@ -310,10 +365,10 @@ function [u_app, xmax, Phi] = QP(x, u_des)
             dxdt = A*x - B*u + C*w(:, i);
             DPsi*dxdt >=- 1000*Psi^3; % constraint on embedding x
         end
-
         minimize( norm(u - u_des, 2) );
     cvx_end;
-    stopwatch()
+    
+    comp_times = [comp_times, cvx_cputime]; % save computation time
     
     if isequal(cvx_status, 'Failed') || isequal(cvx_status, 'Infeasible')
         error('QP Error')
@@ -575,20 +630,6 @@ end
 %  other
 % -------------
 
-% this function works like a stopwatch, and is used to find the times each
-% optimazation take in the ASIF
-function stopwatch()
-    global stopwatch_on comp_times cpu_time
-  
-    if stopwatch_on == 0
-        cpu_time = cputime;
-        stopwatch_on = 1;
-    else
-        comp_times = [comp_times, cputime - cpu_time];
-        stopwatch_on = 0;
-    end
-end
-
 function out = get_corners(xlow,xhigh)
     %given a lower and upper corner point, this returns all corners (as a
     %matrix)
@@ -624,3 +665,64 @@ function out = plot_rect(x_u, x_o)
     out(1) = patch(rect(1, :), rect(2, :), [1, 1, 1], 'EdgeColor', [1, 1, 1]);
     out(2) = patch(rect(1, :), rect(2, :), 'r', 'FaceAlpha', .2);
 end
+
+% FOR VIDEO
+% get to correct subplot
+function video_maker(in)
+    global create_video myVideo
+    if create_video == 1
+        if in == 1
+            %Set up video recorder
+            myVideo = VideoWriter('video.mp4', 'MPEG-4');
+            myVideo.FrameRate = 5;   % Default 30
+            myVideo.Quality = 50;    % Default 75
+            open(myVideo);
+        elseif in == 2
+            Frame = getframe(gcf);
+            writeVideo(myVideo, Frame);
+        elseif in == 3
+            close(myVideo);
+        end
+    end
+end
+
+function ploot(in)
+    if in == 1
+        subplot(52, 2, 1:20)
+    elseif in == 2
+        subplot(52, 2, 32:72)
+    elseif in == 3
+        subplot(52, 2, 85:2:103)
+    elseif in == 4
+        subplot(52, 2, 86:2:104)
+    end
+end
+
+function CART = MakeCart(scale)
+    CART = [];
+    cartlegnth = scale;
+    wheel_rad = scale/5;
+
+    x_off = - cartlegnth/3;
+    for i = 0:pi/4:2*pi
+        % wheel 1
+        point = [x_off + wheel_rad*sin(i); wheel_rad*cos(i)];
+        CART = [CART, point];
+    end
+    x_off = cartlegnth/3;
+    for i = 0:pi/4:2*pi
+        % wheel 2
+        point = [x_off + wheel_rad*sin(i); wheel_rad*cos(i)];
+        CART = [CART, point];
+    end
+    point1 = CART(:, end) + [2*wheel_rad; 0];
+    point2 = point1 + [0; 4*wheel_rad];
+    point3 = point2 + [-(2/3)*cartlegnth - 4*wheel_rad; 0];
+    point4 = point3 + [0; -4*wheel_rad];
+    point5 = point4 + [2*wheel_rad; 0];
+    CART = [CART, point1, point2, point3, point4, point5];
+end
+
+
+
+
