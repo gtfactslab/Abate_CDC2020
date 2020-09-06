@@ -56,14 +56,14 @@ clear n m
 % -------------------------------------------------------------------------
 % User Inputs: Video Parameters
 % -------------------------------------------------------------------------
-global create_video myVideo
+global create_video
 create_video = 0;
 
 % -------------------------------------------------------------------------
 % User Inputs: Simulation Parameters
 % -------------------------------------------------------------------------
 global Tb x0 T dt
-x0 = [1/2; 3/7 ; 5/4; 1/4; 1/2];  % Initial condition
+x0 = [-1/4; 0; 1/2; 1/4; 1/2];  % Initial condition
 Tb = 1;                           % Backup time
 T  = 4;                           % Simulation Time
 dt = .01;                         % Timestep for Simulation
